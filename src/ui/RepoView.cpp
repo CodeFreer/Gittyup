@@ -23,6 +23,7 @@
 #include "ToolBar.h"
 #include "app/Application.h"
 #include "conf/Settings.h"
+#include "dialogs/AmendDialog.h"
 #include "dialogs/CheckoutDialog.h"
 #include "dialogs/CommitDialog.h"
 #include "dialogs/DeleteBranchDialog.h"
@@ -40,6 +41,7 @@
 #include "git/Signature.h"
 #include "git/TagRef.h"
 #include "git/Tree.h"
+#include "git/Signature.h"
 #include "git2/merge.h"
 #include "host/Accounts.h"
 #include "index/Index.h"
@@ -1879,8 +1881,7 @@ void RepoView::amendCommit() {
       break;
 
     case 1:
-      // Reset to parent commit.
-      promptToReset(parents.first(), GIT_RESET_SOFT, commit);
+	  promptToAmend(parents.first(), commit);
       break;
 
     default:
@@ -2148,6 +2149,35 @@ void RepoView::promptToDeleteTag(const git::Reference &ref) {
   DeleteTagDialog *dialog = new DeleteTagDialog(ref, this);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
   dialog->open();
+}
+
+void RepoView::promptToAmend(const git::Commit &commit, const git::Commit &commitToAmend) {
+	// TODO: maybe also editing date...
+	auto* d = new AmendDialog(commitToAmend.author().name(), commitToAmend.committer().name(), commitToAmend.message(), this);
+	d->setAttribute(Qt::WA_DeleteOnClose);
+	connect(d, &QDialog::accepted, [this, d, &commit, &commitToAmend]() {
+		git::Signature author = commitToAmend.author();
+		git::Signature committer = commitToAmend.committer();
+
+		// TODO: replace data
+		//d.author();
+
+		amend(commit, commitToAmend, author, committer, d->commitMessage());
+	});
+
+	d->show();
+}
+
+void RepoView::amend(const git::Commit &commit, const git::Commit &commitToAmend, const git::Signature& author, const git::Signature& committer, const QString& commitMessage) {
+	git::Reference head = mRepo.head();
+	Q_ASSERT(head.isValid());
+
+	QString title = tr("Amend");
+	QString text = tr("%1 to %2").arg(head.name(), commit.link());
+	LogEntry *entry = addLogEntry(text, title);
+
+	if (!commitToAmend.amend(author, committer, commitMessage))
+	  error(entry, tr("amend"), head.name());
 }
 
 void RepoView::promptToReset(const git::Commit &commit, git_reset_t type,
